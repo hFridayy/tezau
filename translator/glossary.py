@@ -25,12 +25,16 @@ STOPWORDS = set("""
 те тем то того тоже той только том ты у уже хотя чем через что чтобы эта эти это этого этой этом
 этот является являются которые который которая которое которых которым настоящего настоящий
 настоящей данный данной данного иные иных случае случаях соответствии согласно течение также
+должен должна должно должны после перед каждый каждая каждое каждого каждой каждом один одна одно
+одного одной одном отдельно автоматически соответствующий соответствующая соответствующие
+соответствующими соответствующих необходимо возможность возможно можно нужно должна иметь
+быть будет будут были время раз всегда сразу далее ниже выше например любой любого других другой
 """.split())
 
 
 # Russian noun and adjective endings, longest first.
-ENDINGS = sorted("""ами ями ого его ому ему ыми ими иях ах ях ов ев ей ий ый ой ая яя ое ее ые ие ую юю
-ом ем ам ям ия ию а я о е ы и у ю ь""".split(), key=len, reverse=True)
+ENDINGS = sorted("""иями иях ией ием иям ами ями ого его ому ему ыми ими ых их ии ах ях ов ев ей ий ый ой
+ая яя ое ее ые ие ую юю ом ем ам ям ия ию а я о е ы и у ю ь""".split(), key=len, reverse=True)
 
 
 def stem(word: str) -> str:
@@ -95,12 +99,26 @@ in its dictionary (base) form.
 Return ONLY a JSON object whose keys are exactly the given terms and whose values are the translations."""
 
 
+# Latin letters that look exactly like Cyrillic ones. Models sometimes mix them into a
+# Cyrillic word ("ережe" with a Latin e): it looks right but breaks search and comparison.
+LOOKALIKES = str.maketrans({"a": "а", "c": "с", "e": "е", "o": "о", "p": "р", "x": "х", "y": "у", "i": "і", "h": "һ", "A": "А", "B": "В", "C": "С", "E": "Е", "H": "Н", "I": "І", "K": "К", "M": "М", "O": "О", "P": "Р", "T": "Т", "X": "Х"})
+CYRILLIC_WORD = re.compile(r"\w*[А-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]\w*")
+KAZAKH_PLURAL = re.compile(r"(?<=\w{3})(лар|лер|дар|дер|тар|тер)\b")
+
+
+def fix_lookalikes(text: str) -> str:
+    """Replace Latin look-alike letters, but only inside words that contain Cyrillic."""
+    return CYRILLIC_WORD.sub(lambda m: m.group(0).translate(LOOKALIKES), text)
+
+
 def _clean(text: str) -> str:
-    return re.sub(r"\s+", " ", str(text)).strip().strip(".,;:!?\"'«»()")
+    return fix_lookalikes(re.sub(r"\s+", " ", str(text)).strip().strip(".,;:!?\"'«»()"))
 
 
 def _norm(text: str) -> str:
-    return _clean(text).lower().replace("ё", "е")
+    """Comparison key for votes: lower case, ё = е, and the Kazakh plural ending removed,
+    so 'ұпайлар' and 'ұпай' count as the same answer."""
+    return KAZAKH_PLURAL.sub("", _clean(text).lower().replace("ё", "е"))
 
 
 def vote_terms(terms: list, providers: list, *, weights: dict = None, store=None,
@@ -141,7 +159,8 @@ def vote_terms(terms: list, providers: list, *, weights: dict = None, store=None
             key = _norm(candidate)
             score[key] += weights.get(name, 1.0)
             voters[key] += 1
-            original.setdefault(key, candidate)
+            if key not in original or len(candidate) < len(original[key]):
+                original[key] = candidate  # keep the shortest form: usually the dictionary form
         winner = max(score, key=lambda k: (score[k], voters[k]))
         agreement = score[winner] / sum(score.values())
         if len(votes) == 1:

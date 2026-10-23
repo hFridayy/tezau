@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kazakh-translator"
+version = "0.1.0"
+description = "Translate large Word documents from Russian to Kazakh with LLMs, page by page, keeping the formatting."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "python-docx>=1.1",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+gemini = ["google-genai>=1.50"]
+claude = ["anthropic>=0.40"]
+openai = ["openai>=1.60"]
+all = ["google-genai>=1.50", "anthropic>=0.40", "openai>=1.60"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+translator = "translator.cli:main"
+
+[tool.setuptools]
+packages = ["translator"]

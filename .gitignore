@@ -13,3 +13,4 @@ results/
 data/
 venv/
 *.db
+*.egg-info/

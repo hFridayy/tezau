@@ -222,7 +222,7 @@ def make_blocks(page_numbers: list, block_pages: int) -> list:
 def translate_document(input_path: str, output_path: str, providers, *,
                        workers: int = 1, block_pages: int = 5, page_chars: int = 2500,
                        notes: str = "", source: str = "Russian", target: str = "Kazakh (Cyrillic script)",
-                       store=None, glossary=None, on_page_done=None) -> Result:
+                       store=None, glossary=None, max_pages: int = None, on_page_done=None) -> Result:
     """Translate a .docx with one or several providers sharing the work.
 
     The pages are cut into blocks of `block_pages` and put in a queue. Every provider runs
@@ -231,6 +231,7 @@ def translate_document(input_path: str, output_path: str, providers, *,
     for good (bad key, no credit, quota used up), its unfinished pages go back to the queue
     and the remaining providers finish them (failover).
 
+    max_pages: translate only the first N pages (for cheap tests); the rest stays untranslated.
     store: a memory.Store - paragraphs it already knows are reused for free, new ones are added.
     glossary: a glossary.Glossary - every page gets the agreed terms that appear on it.
     on_page_done(page_number, provider_name, pages_done, pages_total) is called after each page.
@@ -248,6 +249,8 @@ def translate_document(input_path: str, output_path: str, providers, *,
     cached = store.tm_get_many(unique) if store else {}
     todo = [text for text in unique if text not in cached]
     pages = make_pages(todo, page_chars)
+    if max_pages:
+        pages = pages[:max_pages]
     checkpoint = Checkpoint(output_path + ".progress.jsonl", fingerprint(pages, source, target))
     log.info("%d paragraphs (%d unique, %d from memory) -> %d pages; providers: %s, %d worker(s) each",
              len(paragraphs), len(unique), len(cached), len(pages),
@@ -334,7 +337,9 @@ def translate_document(input_path: str, output_path: str, providers, *,
         store.tm_put_many([(s, t, made_by[s]) for s, t in translated.items()])
     translated.update(cached)
     for p in paragraphs:
-        set_paragraph_text(p, translated[normalize(p.text)])
+        key = normalize(p.text)
+        if key in translated:  # with max_pages, later paragraphs stay as they are
+            set_paragraph_text(p, translated[key])
     doc.save(output_path)
     checkpoint.remove()
     return Result(output_path, len(paragraphs), len(pages), time.monotonic() - started,
