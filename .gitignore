@@ -1,0 +1,13 @@
+# secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# private documents and run output
+*.docx
+*.progress.json
+results/
+data/
