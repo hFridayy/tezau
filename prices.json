@@ -1,0 +1,5 @@
+{
+  "gemini-3-flash-preview": [0.50, 3.00],
+  "claude-haiku-5-5": [0.10, 0.50],
+  "gpt-5-mini": [0.25, 2.00]
+}

@@ -35,6 +35,18 @@ Rules:
 
 CONTEXT_CHARS = 800  # how much of the previous page to show the model
 
+# Letters that exist in Kazakh but not in Russian. A Kazakh sentence of 8+ words almost
+# always contains one of them; a Russian sentence never does.
+KAZAKH_ONLY = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
+
+
+def looks_untranslated(source: str, translation: str) -> bool:
+    """True if the model most likely returned the text still in Russian."""
+    src, out = normalize(source), normalize(translation)
+    if out == src and len(src.split()) >= 3:
+        return True
+    return len(out.split()) >= 8 and not KAZAKH_ONLY.intersection(out)
+
 
 # ---------------------------------------------------------------- chunking
 
@@ -87,10 +99,10 @@ def make_pages(paragraphs: list, page_chars: int) -> list:
 def parse_json_object(text: str) -> dict:
     """Models sometimes wrap JSON in ```json fences or add a sentence - take the {...} part."""
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", (text or "").strip())
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end <= start:
+    start = text.find("{")
+    if start == -1:
         raise ValueError("no JSON object in the answer")
-    data = json.loads(text[start:end + 1])
+    data, _ = json.JSONDecoder().raw_decode(text[start:])  # the first complete object; ignore extra text
     if not isinstance(data, dict):
         raise ValueError("the answer is not a JSON object")
     return data
@@ -108,7 +120,7 @@ class PageTranslator:
             self.system += f"\nAdditional instructions: {notes}"
         self.context = ""
 
-    def translate(self, texts: list) -> list:
+    def translate(self, texts: list, _depth: int = 0) -> list:
         """Translate a list of paragraphs; always returns a list of the same length."""
         payload = {str(i + 1): t for i, t in enumerate(texts)}
         user = ""
@@ -126,6 +138,14 @@ class PageTranslator:
                 data = parse_json_object(self.provider.complete(self.system, user))
                 result = [str(data[key]).strip() for key in payload]
                 if all(result):
+                    bad = [i for i, (s, t) in enumerate(zip(texts, result)) if looks_untranslated(s, t)]
+                    if bad and _depth < 2:  # translate only the untranslated paragraphs again
+                        log.warning("%d of %d paragraphs came back untranslated, translating them again",
+                                    len(bad), len(texts))
+                        for i, fixed in zip(bad, self.translate([texts[i] for i in bad], _depth + 1)):
+                            result[i] = fixed
+                    elif bad:
+                        log.warning("%d paragraphs still look untranslated after retries", len(bad))
                     self.context = "\n".join(result)[-CONTEXT_CHARS:]
                     return result
                 problem = "an empty translation"
@@ -139,7 +159,7 @@ class PageTranslator:
                 "Reply with the translation only.", texts[0], json_mode=False).strip()
             return [answer or texts[0]]
         half = len(texts) // 2  # smaller requests fail less often
-        return self.translate(texts[:half]) + self.translate(texts[half:])
+        return self.translate(texts[:half], _depth) + self.translate(texts[half:], _depth)
 
 
 # ---------------------------------------------------------------- checkpointing
@@ -247,6 +267,7 @@ def translate_document(input_path: str, output_path: str, providers, *,
 
     # 2. reuse the translation memory, split the rest into pages
     cached = store.tm_get_many(unique) if store else {}
+    cached = {s: t for s, t in cached.items() if not looks_untranslated(s, t)}  # don't reuse bad answers
     todo = [text for text in unique if text not in cached]
     pages = make_pages(todo, page_chars)
     if max_pages:
