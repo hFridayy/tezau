@@ -2,7 +2,7 @@
 .env
 
 # Python
-.venv/
+venv/
 __pycache__/
 *.pyc
 
@@ -11,3 +11,4 @@ __pycache__/
 *.progress.json
 results/
 data/
+venv/
