@@ -67,6 +67,17 @@ class Store:
                     found[text] = row[0]
         return found
 
+    def tm_providers(self, texts: list) -> dict:
+        """{source text: (translation, who made it: a provider name or "human")} for texts in memory."""
+        found = {}
+        with self._lock:
+            for text in texts:
+                row = self._conn.execute("SELECT target, provider FROM tm WHERE key = ?",
+                                         (self._key(text),)).fetchone()
+                if row:
+                    found[text] = (row[0], row[1])
+        return found
+
     def tm_put_many(self, pairs: list, provider: str = "", human: bool = False) -> None:
         """pairs: [(source, target, provider_or_None)]. A machine translation never replaces a human one."""
         rows = [(self._key(s), self.lang, normalize(s), t, p or provider, int(human), _now()) for s, t, p in pairs]

@@ -171,6 +171,27 @@ def cmd_terms(args) -> int:
     return 0
 
 
+def cmd_eval(args) -> int:
+    try:
+        from . import evaluation
+        import sacrebleu  # noqa: F401  (needed for the metrics)
+    except ImportError:
+        sys.exit('Evaluation needs sacrebleu: pip install -e ".[eval]"')
+    if args.eval_command == "check":
+        judge = make_providers(args.judge, parse_pairs(args.model, "model"))[0] if args.judge else None
+        print(evaluation.run_check(args.source, args.translation, judge, args.sample))
+    elif args.eval_command == "post-edit":
+        if args.save_to_memory and not args.source:
+            sys.exit("--save-to-memory needs --source with the original Russian file")
+        store = Store(args.db) if args.save_to_memory else None
+        print(evaluation.run_post_edit(args.machine, args.edited, args.pages, args.minutes, args.source, store))
+    elif args.eval_command == "consistency":
+        if not os.path.exists(args.db):
+            sys.exit(f"{args.db} not found - consistency needs the terms from a translate --vote-terms run")
+        print(evaluation.run_consistency(args.source, args.translation, Store(args.db)))
+    return 0
+
+
 def cmd_check_keys(args) -> int:
     providers = make_providers(args.providers, parse_pairs(args.model, "model"))
     failures = 0
@@ -236,6 +257,28 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("target")
     t.add_argument("--db", default="translator.db")
     p.set_defaults(func=cmd_terms)
+
+    p = sub.add_parser("eval", help="measure translation quality")
+    ev = p.add_subparsers(dest="eval_command", required=True)
+    e = ev.add_parser("check", help="automatic checks on every paragraph (+ optional AI judge)")
+    e.add_argument("source", help="the original Russian .docx")
+    e.add_argument("translation", help="the translated .docx")
+    e.add_argument("--judge", metavar="PROVIDER", help="AI judge, e.g. claude - best a different model than the translator")
+    e.add_argument("--model", action="append", metavar="PROVIDER=MODEL")
+    e.add_argument("--sample", type=int, default=30, help="paragraphs for the AI judge (default 30)")
+    e = ev.add_parser("post-edit", help="how much the human editor changed")
+    e.add_argument("machine", help="the machine translation, unchanged")
+    e.add_argument("edited", help="the same file after your corrections")
+    e.add_argument("--pages", type=float, help="compare only the first N pages (the part you reviewed)")
+    e.add_argument("--minutes", type=float, help="how long the editing took, for minutes per page")
+    e.add_argument("--source", help="the original Russian .docx (needed for --save-to-memory)")
+    e.add_argument("--save-to-memory", action="store_true", help="save your edits to memory as human translations")
+    e.add_argument("--db", default="translator.db")
+    e = ev.add_parser("consistency", help="how often the agreed terms were used, per model")
+    e.add_argument("source")
+    e.add_argument("translation")
+    e.add_argument("--db", default="translator.db")
+    p.set_defaults(func=cmd_eval)
 
     p = sub.add_parser("check-keys", help="one tiny test request per provider")
     provider_options(p, all_names)
