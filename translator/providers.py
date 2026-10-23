@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MODELS = {
     "gemini": "gemini-3-flash-preview",
-    "claude": "claude-sonnet-5-5",
+    "claude": "claude-haiku-5-5",
     "openai": "gpt-5-mini",
 }
 KEY_ENV = {"gemini": "GEMINI_API_KEY", "claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
@@ -43,7 +43,8 @@ class AuthError(ProviderError):
 @dataclass
 class Usage:
     input_tokens: int = 0
-    output_tokens: int = 0
+    output_tokens: int = 0     # includes reasoning tokens - they are billed as output
+    reasoning_tokens: int = 0  # hidden "thinking" before the answer
     requests: int = 0
 
 
@@ -80,11 +81,23 @@ class RateLimiter:
 
 
 def classify_error(e: Exception) -> str:
-    """'auth', 'rate_limit' or 'transient'. SDKs differ, so check the status code and the message."""
+    """Decide what to do about an error. SDKs differ, so check the status code and the message.
+
+    'auth'       - missing or invalid key: stop
+    'fatal'      - waiting will never fix it (no credit, wrong model, daily quota used up): stop
+    'rate_limit' - too many requests right now: slow down and retry
+    'transient'  - network error, server overloaded, timeout: retry
+    """
     status = getattr(e, "status_code", None) or getattr(e, "code", None)
     msg = str(e).lower()
+    compact = msg.replace(" ", "").replace("_", "")
     if status in (401, 403) or any(s in msg for s in ("api key", "api_key", "unauthorized", "permission denied")):
         return "auth"
+    if (status in (400, 404, 413, 422)
+            or "perday" in compact                      # Gemini daily quota, e.g. ...PerDayPerProject...
+            or "insufficientquota" in compact           # OpenAI: no credit left
+            or any(s in msg for s in ("credit balance", "not_found", "not found", "does not exist"))):
+        return "fatal"
     if status == 429 or any(s in msg for s in ("rate limit", "quota", "resource_exhausted", "too many requests")):
         return "rate_limit"
     return "transient"  # network error, server overloaded (500/503/529), timeout ...
@@ -102,8 +115,9 @@ class Provider:
 
     name = "base"
 
-    def __init__(self, model=None, api_key=None, limiter=None, max_attempts=6):
+    def __init__(self, model=None, api_key=None, limiter=None, max_attempts=6, reasoning=None):
         self.model = model or DEFAULT_MODELS[self.name]
+        self.reasoning = reasoning  # how much the model may "think"; None = provider default
         self.api_key = api_key or os.environ.get(KEY_ENV[self.name])
         if not self.api_key:
             raise AuthError(f"No API key for {self.name}: set {KEY_ENV[self.name]} in your .env file")
@@ -117,18 +131,20 @@ class Provider:
         """Create the SDK client (subclasses)."""
 
     def _call(self, system: str, user: str, json_mode: bool):
-        """Send one request. Return (text, input_tokens, output_tokens)."""
+        """Send one request. Return (text, input_tokens, output_tokens[, reasoning_tokens])."""
         raise NotImplementedError
 
     def complete(self, system: str, user: str, json_mode: bool = True) -> str:
         for attempt in range(self.max_attempts):
             self.limiter.wait()
             try:
-                text, tokens_in, tokens_out = self._call(system, user, json_mode)
+                text, tokens_in, tokens_out, *extra = self._call(system, user, json_mode)
             except Exception as e:
                 kind = classify_error(e)
                 if kind == "auth":
-                    raise AuthError(f"{self.name}: {e}") from e
+                    raise AuthError(f"{self.name}: API key problem: {e}") from e
+                if kind == "fatal":
+                    raise ProviderError(f"{self.name}: retrying will not help: {e}") from e
                 if attempt == self.max_attempts - 1:
                     raise ProviderError(f"{self.name}: gave up after {self.max_attempts} attempts: {e}") from e
                 if kind == "rate_limit":
@@ -142,6 +158,7 @@ class Provider:
             with self._usage_lock:
                 self.usage.input_tokens += tokens_in or 0
                 self.usage.output_tokens += tokens_out or 0
+                self.usage.reasoning_tokens += (extra[0] if extra else 0) or 0
                 self.usage.requests += 1
             return text or ""
         raise ProviderError(f"{self.name}: no attempts made")  # only if max_attempts < 1
@@ -151,6 +168,10 @@ class Provider:
 
 
 class GeminiProvider(Provider):
+    """Gemini 3 models "think" before answering, and thinking tokens are billed like output.
+    Translation needs little thinking, so the default is LOW (set GEMINI_THINKING_LEVEL in .env:
+    minimal, low, medium or high)."""
+
     name = "gemini"
 
     def _setup(self):
@@ -158,23 +179,34 @@ class GeminiProvider(Provider):
         from google.genai import types
         self._types = types
         self._client = genai.Client(api_key=self.api_key)
+        if self.reasoning is None and self.model.startswith("gemini-3"):
+            self.reasoning = os.environ.get("GEMINI_THINKING_LEVEL", "low")
 
     def _call(self, system, user, json_mode):
-        config = self._types.GenerateContentConfig(
+        types = self._types
+        config = types.GenerateContentConfig(
             system_instruction=system,
             response_mime_type="application/json" if json_mode else None,
-            automatic_function_calling=self._types.AutomaticFunctionCallingConfig(disable=True))
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=types.ThinkingConfig(thinking_level=self.reasoning) if self.reasoning else None)
         resp = self._client.models.generate_content(model=self.model, contents=user, config=config)
         meta = resp.usage_metadata
-        return resp.text, meta and meta.prompt_token_count, meta and meta.candidates_token_count
+        thoughts = (meta and meta.thoughts_token_count) or 0
+        output = ((meta and meta.candidates_token_count) or 0) + thoughts
+        return resp.text, meta and meta.prompt_token_count, output, thoughts
 
 
 class ClaudeProvider(Provider):
+    """Some newer Anthropic keys are not tied to a workspace; they need the workspace ID
+    (set ANTHROPIC_WORKSPACE_ID in .env, from the workspace page in the Claude Console)."""
+
     name = "claude"
 
     def _setup(self):
         import anthropic
-        self._client = anthropic.Anthropic(api_key=self.api_key)
+        workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+        headers = {"anthropic-workspace-id": workspace} if workspace else None
+        self._client = anthropic.Anthropic(api_key=self.api_key, default_headers=headers)
 
     def _call(self, system, user, json_mode):
         resp = self._client.messages.create(
@@ -185,21 +217,30 @@ class ClaudeProvider(Provider):
 
 
 class OpenAIProvider(Provider):
+    """GPT-5 models reason before answering; reasoning tokens are billed as output.
+    For translation the default is "minimal" (set OPENAI_REASONING_EFFORT in .env to change it)."""
+
     name = "openai"
 
     def _setup(self):
         from openai import OpenAI
         self._client = OpenAI(api_key=self.api_key)
+        if self.reasoning is None and self.model.startswith(("gpt-5", "o3", "o4")):
+            self.reasoning = os.environ.get("OPENAI_REASONING_EFFORT", "minimal")
 
     def _call(self, system, user, json_mode):
         extra = {"response_format": {"type": "json_object"}} if json_mode else {}
+        if self.reasoning:
+            extra["reasoning_effort"] = self.reasoning
         resp = self._client.chat.completions.create(
             model=self.model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             **extra)
         usage = resp.usage
+        details = usage and usage.completion_tokens_details
         return (resp.choices[0].message.content,
-                usage and usage.prompt_tokens, usage and usage.completion_tokens)
+                usage and usage.prompt_tokens, usage and usage.completion_tokens,
+                (details and details.reasoning_tokens) or 0)
 
 
 PROVIDERS = {p.name: p for p in (GeminiProvider, ClaudeProvider, OpenAIProvider)}
