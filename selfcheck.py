@@ -52,7 +52,7 @@ def fake(name_, broken=False):
                 return json.dumps({t: "тауар" if "товар" in t else f"KK({t})" for t in json.loads(user)},
                                   ensure_ascii=False), 5, 5
             payload = json.loads(user.split("Translate this page:\n", 1)[1])
-            return json.dumps({k: "ҚҚ:" + v for k, v in payload.items()}, ensure_ascii=False), 10, 8
+            return json.dumps({k: "[қаз] " + v for k, v in payload.items()}, ensure_ascii=False), 10, 8
     return Fake(api_key="fake")
 
 
@@ -74,7 +74,7 @@ r = translate_document(f"{tmp}/in.docx", f"{tmp}/out.docx", providers, store=sto
                        glossary=Glossary.from_store(store), block_pages=1)
 out = [p.text for p in Document(f"{tmp}/out.docx").paragraphs]
 check("every paragraph translated, in the right order",
-      all(o == "ҚҚ:" + s for s, o in zip(source, out) if any(c.isalpha() for c in s)))
+      all(o == "[қаз] " + s for s, o in zip(source, out) if any(c.isalpha() for c in s)))
 check("numbers-only paragraph left alone", out[-1] == "2026")
 check("broken provider dropped out, others took over", "gemini" in r.failed and r.pages_by_provider["gemini"] == 0)
 r2 = translate_document(f"{tmp}/in.docx", f"{tmp}/out2.docx", [fake("claude")], store=store)

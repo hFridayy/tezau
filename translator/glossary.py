@@ -195,11 +195,12 @@ class Glossary:
         return len(self.entries)
 
     def for_text(self, text: str) -> list:
-        words = [w.lower().replace("ё", "е") for w in WORD.findall(text)]
+        """Terms whose words appear in the text with the same stems, in the same order.
+        Stems must be EQUAL: a prefix match let 'поля' (stem 'пол') match 'пользователь'."""
+        stems_in_text = [stem(w) for w in WORD.findall(text)]
         found = []
         for term, stems in self._stems.items():
             n = len(stems)
-            if n and any(all(words[i + j].startswith(stems[j]) for j in range(n))
-                         for i in range(len(words) - n + 1)):
+            if n and any(stems_in_text[i:i + n] == stems for i in range(len(stems_in_text) - n + 1)):
                 found.append((term, self.entries[term]))
         return found

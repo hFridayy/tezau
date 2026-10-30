@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from .docx_io import iter_paragraphs, needs_translation, normalize, open_document, set_paragraph_text
+from .glossary import fix_lookalikes
 from .providers import Provider, ProviderError
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,9 @@ Rules:
 - Translate every paragraph completely and accurately; do not summarize, merge, split or skip paragraphs.
 - Keep numbers, dates, codes, URLs, e-mail addresses and list numbering unchanged.
 - Use natural, correct language and consistent terminology across the whole document.
+- Translate whole sentences. Never leave {source} words or sentences in the output; only proper names,
+  codes and names in «quotes» may stay as they are. Replacing only some words is not a translation.
+- Write {target} in its own alphabet only; never put Latin letters inside words.
 - No comments, no explanations, no markdown - only the JSON object."""
 
 CONTEXT_CHARS = 800  # how much of the previous page to show the model
@@ -46,6 +50,70 @@ def looks_untranslated(source: str, translation: str) -> bool:
     if out == src and len(src.split()) >= 3:
         return True
     return len(out.split()) >= 8 and not KAZAKH_ONLY.intersection(out)
+
+
+# Short Russian words that do not exist in Kazakh: two of them outside «quotes» = Russian left in the text.
+RUSSIAN_FUNCTION_WORDS = set("""и в на для по как что при с из к до или его их если после только также
+должен должна должно должны является являются который которая которые которых чтобы""".split())
+QUOTED = re.compile(r"«[^»]*»|\"[^\"]*\"|“[^”]*”")
+LETTER_WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*")
+# a word mixing Cyrillic with Latin letters (including accented ones like ą, é)
+MIXED_SCRIPT_WORD = re.compile(r"\b(?=\w*[А-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі])(?=\w*[A-Za-z\u00C0-\u024F])\w+\b")
+JSON_LEAK = re.compile(r'"\s*:\s*"')
+# Russian grammatical endings that Kazakh words (and shared loanwords like "манекен") do not have
+RUSSIAN_ENDINGS = ("ого", "его", "ому", "ему", "ыми", "ими", "ых", "их", "ется", "ются", "ается", "яется",
+                   "ует", "ание", "ения", "ение", "ости", "ость", "ией", "ями", "ами", "ую", "ая", "яя",
+                   "ое", "ые", "ий", "ый", "ой")
+FAKE_MARKER = "[қаз] "  # what the fake provider puts in front of its "translations"
+
+
+def detect_problems(source: str, translation: str) -> list:
+    """Reasons why a translation is not acceptable (empty list = fine):
+    untranslated, half_translated, json_leak, mixed_script, unchanged (a short line left as in Russian)."""
+    src, out = normalize(source), normalize(translation)
+    if out.startswith(FAKE_MARKER):  # output of the fake provider (dry runs, tests)
+        return []
+    if looks_untranslated(src, out):
+        return ["untranslated"]
+    reasons = []
+    if JSON_LEAK.search(out) and not JSON_LEAK.search(src):
+        reasons.append("json_leak")
+    if MIXED_SCRIPT_WORD.search(out):
+        reasons.append("mixed_script")
+    words = [w.lower() for w in LETTER_WORD.findall(QUOTED.sub(" ", out))]
+    source_words = {w.lower() for w in LETTER_WORD.findall(QUOTED.sub(" ", src)) if len(w) >= 3}
+    function_words = sum(1 for w in words if w in RUSSIAN_FUNCTION_WORDS)
+    # longest stretch of Cyrillic words copied unchanged from the Russian source, counted only
+    # if it contains a typically Russian ending (shared loanwords and Latin names are fine)
+    run = longest_copied = 0
+    russian_in_run = False
+    for w in words:
+        copied = (len(w) >= 3 and w in source_words and not KAZAKH_ONLY.intersection(w)
+                  and re.search(r"[а-яё]", w) is not None)
+        run = run + 1 if copied else 0
+        russian_in_run = (russian_in_run and copied) or (copied and w.endswith(RUSSIAN_ENDINGS))
+        if russian_in_run:
+            longest_copied = max(longest_copied, run)
+    if len(words) >= 5 and (function_words >= 2 or longest_copied >= 3):
+        reasons.append("half_translated")
+    elif len(words) < 5:  # short lines: list items, headings, table cells
+        copied = [w for w in words if len(w) >= 4 and w in source_words
+                  and not KAZAKH_ONLY.intersection(w) and re.search(r"[а-яё]", w)]
+        if out == src and copied:
+            reasons.append("unchanged")
+        elif copied and (function_words >= 1 or any(len(w) >= 5 and w.endswith(RUSSIAN_ENDINGS) for w in copied)):
+            reasons.append("half_translated")
+    return reasons
+
+
+def repair(source: str, translation: str) -> str:
+    """Fix what can be fixed without asking the model again: an answer written as
+    'source": "translation', and Latin look-alike letters inside Cyrillic words."""
+    text = translation.strip()
+    m = re.match(r'^\s*"?(.+?)"\s*:\s*"(.+?)"?\s*,?\s*$', text, re.S)
+    if m and normalize(m.group(1))[:30].lower() == normalize(source)[:30].lower():
+        text = m.group(2).strip()
+    return fix_lookalikes(text)
 
 
 # ---------------------------------------------------------------- chunking
@@ -136,11 +204,11 @@ class PageTranslator:
         for attempt in range(2):
             try:
                 data = parse_json_object(self.provider.complete(self.system, user))
-                result = [str(data[key]).strip() for key in payload]
+                result = [repair(texts[i], str(data[key])) for i, key in enumerate(payload)]
                 if all(result):
-                    bad = [i for i, (s, t) in enumerate(zip(texts, result)) if looks_untranslated(s, t)]
-                    if bad and _depth < 2:  # translate only the untranslated paragraphs again
-                        log.warning("%d of %d paragraphs came back untranslated, translating them again",
+                    bad = [i for i, (s, t) in enumerate(zip(texts, result)) if detect_problems(s, t)]
+                    if bad and _depth < 2:  # translate only the bad paragraphs again
+                        log.warning("%d of %d paragraphs came back untranslated or broken, translating them again",
                                     len(bad), len(texts))
                         for i, fixed in zip(bad, self.translate([texts[i] for i in bad], _depth + 1)):
                             result[i] = fixed
@@ -156,8 +224,9 @@ class PageTranslator:
         if len(texts) == 1:  # last resort for one paragraph: plain text, no JSON
             answer = self.provider.complete(
                 f"Translate the user's text from {self.source} to {self.target}. "
-                "Reply with the translation only.", texts[0], json_mode=False).strip()
-            return [answer or texts[0]]
+                "Translate every word except proper names. Reply with the translation only.",
+                texts[0], json_mode=False).strip()
+            return [repair(texts[0], answer) if answer else texts[0]]
         half = len(texts) // 2  # smaller requests fail less often
         return self.translate(texts[:half], _depth) + self.translate(texts[half:], _depth)
 
@@ -267,7 +336,7 @@ def translate_document(input_path: str, output_path: str, providers, *,
 
     # 2. reuse the translation memory, split the rest into pages
     cached = store.tm_get_many(unique) if store else {}
-    cached = {s: t for s, t in cached.items() if not looks_untranslated(s, t)}  # don't reuse bad answers
+    cached = {s: t for s, t in cached.items() if not detect_problems(s, t)}  # don't reuse bad answers
     todo = [text for text in unique if text not in cached]
     pages = make_pages(todo, page_chars)
     if max_pages:

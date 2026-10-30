@@ -18,7 +18,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from .docx_io import iter_paragraphs, needs_translation, normalize, open_document
-from .engine import looks_untranslated, parse_json_object
+from .engine import detect_problems, looks_untranslated, parse_json_object
 from .glossary import KAZAKH_PLURAL, Glossary
 
 RESULTS_DIR = "results"
@@ -91,7 +91,10 @@ def bootstrap_ci(hyps: list, refs: list, metric, rounds: int = 1000, seed: int =
 CHECKS = {
     "empty": "translation is missing",
     "untranslated": "still Russian (unchanged, or a long text without any Kazakh-only letter)",
+    "half_translated": "Russian sentence with only some words in Kazakh",
+    "json_leak": "source and translation glued together ('…\": \"…')",
     "mixed_script": "a word mixes Latin and Cyrillic letters (e.g. a Latin 'e' inside a Kazakh word)",
+    "unchanged": "short line left exactly as in Russian - check it (fine if it is a loanword like «Модуль»)",
     "numbers_changed": "numbers differ from the source (fine if a number was written out in words)",
     "length_suspicious": "translation is under half or over double the source length",
 }
@@ -135,7 +138,8 @@ def judge(provider, items: list, batch: int = 8) -> dict:
     }
 
 
-def run_check(source: str, translation: str, judge_provider=None, sample: int = 30, seed: int = 42) -> str:
+def run_check(source: str, translation: str, judge_provider=None, sample: int = 30, seed: int = 42,
+              store=None) -> str:
     src, tgt = doc_paragraphs(source), doc_paragraphs(translation)
     pairs = [(i, src[i], tgt[j]) for i, j in align(src, tgt) if needs_translation(src[i])]
     flags = defaultdict(list)
@@ -143,10 +147,8 @@ def run_check(source: str, translation: str, judge_provider=None, sample: int = 
         if not t:
             flags["empty"].append(i)
             continue
-        if looks_untranslated(s, t):
-            flags["untranslated"].append(i)
-        if MIXED_SCRIPT.search(t):
-            flags["mixed_script"].append(i)
+        for reason in detect_problems(s, t):
+            flags[reason].append(i)
         if sorted(NUMBER.findall(s)) != sorted(NUMBER.findall(t)):
             flags["numbers_changed"].append(i)
         if len(s) > 30 and not 0.5 <= len(t) / len(s) <= 2.0:
@@ -162,6 +164,17 @@ def run_check(source: str, translation: str, judge_provider=None, sample: int = 
     md += [f"| {k} | {len(flags[k])} | {v} |" for k, v in CHECKS.items()]
     report = {"source": source, "translation": translation, "checked": len(pairs),
               "pass_rate": round(passed, 1), "flags": {k: len(flags[k]) for k in CHECKS}}
+    if store:  # which model wrote the flagged paragraphs (only where memory still holds this text)
+        known = store.tm_providers([s for _, s, _ in pairs])
+        total, bad = Counter(), Counter()
+        for i, s, t in pairs:
+            target_in_memory, who = known.get(s, ("", "not in memory"))
+            who = who if normalize(target_in_memory) == t else "not in memory"
+            total[who] += 1
+            bad[who] += i in flagged
+        md += ["", "| Model | Paragraphs | With problems |", "|---|---|---|"]
+        md += [f"| {w} | {n} | {bad[w]} ({100 * bad[w] / n:.1f}%) |" for w, n in total.most_common()]
+        report["by_model"] = {w: {"paragraphs": n, "problems": bad[w]} for w, n in total.items()}
 
     if judge_provider:
         candidates = [(i, s, t) for i, s, t in pairs if len(s) > 40 and t]
@@ -182,7 +195,8 @@ def run_check(source: str, translation: str, judge_provider=None, sample: int = 
         reasons = ", ".join(k for k in CHECKS if i in flags[k])
         md += [f"**#{i}** ({reasons})", f"- RU: {short(s)}", f"- KK: {short(t)}", ""]
     path = save_report("check", report, md)
-    return "\n".join(md[:7 + len(CHECKS)]) + (
+    shown = 7 + len(CHECKS) + (3 + len(report["by_model"]) if store else 0)
+    return "\n".join(md[:shown]) + (
         f"\n\nAI judge: accuracy {report['judge']['accuracy']}/5, fluency {report['judge']['fluency']}/5, "
         f"MQM {report['judge']['mqm_per_100_words']} per 100 words" if report.get("judge", {}).get("judged") else ""
     ) + f"\n\nFull report: {path}"
@@ -251,24 +265,30 @@ def run_post_edit(machine: str, edited: str, pages: float = None, minutes: float
 # ------------------------------------------------------------------ consistency
 
 def _kazakh_roots(term: str) -> list:
-    """Roots of a Kazakh term, robust to endings: drop the plural, and the last letter of
-    longer words (it can change before a suffix: кітап -> кітабы, тақ -> тағы)."""
+    """Roots of a Kazakh term, robust to endings and related forms: drop the plural, then the
+    last letters (they change before suffixes: өзгеріс -> өзгерту, құру -> құрылған, кітап -> кітабы)."""
     words = KAZAKH_PLURAL.sub("", term.lower()).split()
-    return [w[:-1] if len(w) >= 5 else w for w in words]
+    return [w[:max(4, len(w) - 2)] if len(w) >= 5 else (w[:-1] if len(w) == 4 else w) for w in words]
 
 
-def run_consistency(source: str, translation: str, store) -> str:
-    """For each agreed term: in how many paragraphs that contain it was the agreed translation used?"""
+def run_consistency(source: str, translation: str, store, pages: float = None) -> str:
+    """For each agreed term: in how many paragraphs that contain it was the agreed translation used?
+    pages: only the first N pages (e.g. when only those were translated in an experiment)."""
     terms = {s: t for s, (t, status) in store.terms().items() if status in ("agreed", "human", "single")}
     if not terms:
         return "No agreed terms in the database. Run translate with --vote-terms first."
     glossary = Glossary(terms)
     src, tgt = doc_paragraphs(source), doc_paragraphs(translation)
     providers = store.tm_providers([src[i] for i, _ in align(src, tgt)])
+    cutoff = first_pages_cutoff(src, pages) if pages else len(src)
     per_term = defaultdict(lambda: [0, 0])           # term -> [used, occurrences]
     per_provider = defaultdict(lambda: [0, 0])
+    skipped = 0
     for i, j in align(src, tgt):
-        if not needs_translation(src[i]):
+        if not needs_translation(src[i]) or i >= cutoff:
+            continue
+        if not tgt[j] or looks_untranslated(src[i], tgt[j]):  # still Russian: not a terminology question
+            skipped += 1
             continue
         words = tgt[j].lower().split()
         for term, target in glossary.for_text(src[i]):
@@ -284,14 +304,16 @@ def run_consistency(source: str, translation: str, store) -> str:
     total = sum(n for _, n in per_term.values())
     md = [f"# Term consistency: {translation}", "",
           f"- Agreed terms: **{len(terms)}**, found in the source **{total}** times",
-          f"- Agreed translation used: **{100 * total_used / max(total, 1):.1f}%**", "",
+          f"- Agreed translation used: **{100 * total_used / max(total, 1):.1f}%**",
+          f"- Paragraphs skipped because they are still in Russian: {skipped}", "",
           "| Model | Term occurrences | Agreed term used |", "|---|---|---|"]
     md += [f"| {who} | {n} | {100 * u / n:.1f}% |" for who, (u, n) in sorted(per_provider.items())]
     md += ["", "## Least consistent terms", "", "| Term | Agreed translation | Used | Occurrences |", "|---|---|---|---|"]
     worst = sorted(per_term.items(), key=lambda kv: kv[1][0] / kv[1][1])
     md += [f"| {t} | {terms[t]} | {100 * u / n:.0f}% | {n} |" for t, (u, n) in worst[:20]]
-    report = {"terms": len(terms), "occurrences": total, "used_percent": round(100 * total_used / max(total, 1), 1),
+    report = {"terms": len(terms), "occurrences": total, "skipped_untranslated": skipped,
+              "used_percent": round(100 * total_used / max(total, 1), 1),
               "per_provider": {k: {"used": u, "occurrences": n} for k, (u, n) in per_provider.items()},
               "per_term": {k: {"used": u, "occurrences": n} for k, (u, n) in per_term.items()}}
     path = save_report("consistency", report, md)
-    return "\n".join(md[:8 + len(per_provider)]) + f"\n\nFull report: {path}"
+    return "\n".join(md[:9 + len(per_provider)]) + f"\n\nFull report: {path}"

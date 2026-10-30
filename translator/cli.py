@@ -82,21 +82,23 @@ def cmd_translate(args) -> int:
     if dry_run:
         print("  dry run with the fake provider: the memory database is not used")
     store = None if (args.no_memory or dry_run) else Store(args.db)
+    # the glossary lives in the same database; --no-memory only switches off the translation memory
+    terms_db = None if dry_run else (store or (Store(args.db) if os.path.exists(args.db) else None))
 
     glossary = None
-    if store and args.vote_terms:
+    if terms_db and args.vote_terms:
         texts = document_texts(args.input)
         terms = extract_terms(texts, max_terms=args.max_terms, min_count=args.min_count)
-        known = store.terms()
+        known = terms_db.terms()
         new_terms = [t for t in terms if args.revote or t not in known]
         new_terms = [t for t in new_terms if known.get(t, ("", ""))[1] != "human"]  # never re-vote yours
         print(f"Key terms: {len(terms)} found, {len(new_terms)} new - voting with {len(providers)} model(s)...")
         weights = {k: float(v) for k, v in parse_pairs(args.weight, "weight").items()}
-        for d in vote_terms(new_terms, providers, weights=weights, store=store):
+        for d in vote_terms(new_terms, providers, weights=weights, store=terms_db):
             flag = "  <- needs a human decision" if d["status"] == "disputed" else ""
             print(f"  {d['source']} -> {d['target']}  [{d['status']}]{flag}")
-    if store:
-        glossary = Glossary.from_store(store)
+    if terms_db and not args.no_glossary:
+        glossary = Glossary.from_store(terms_db)
 
     def progress(page, provider, done, total):
         print(f"  page {page:>3} by {provider:<7} ({done}/{total} done)", flush=True)
@@ -179,7 +181,8 @@ def cmd_eval(args) -> int:
         sys.exit('Evaluation needs sacrebleu: pip install -e ".[eval]"')
     if args.eval_command == "check":
         judge = make_providers(args.judge, parse_pairs(args.model, "model"))[0] if args.judge else None
-        print(evaluation.run_check(args.source, args.translation, judge, args.sample))
+        store = Store(args.db) if os.path.exists(args.db) else None
+        print(evaluation.run_check(args.source, args.translation, judge, args.sample, store=store))
     elif args.eval_command == "post-edit":
         if args.save_to_memory and not args.source:
             sys.exit("--save-to-memory needs --source with the original Russian file")
@@ -188,7 +191,7 @@ def cmd_eval(args) -> int:
     elif args.eval_command == "consistency":
         if not os.path.exists(args.db):
             sys.exit(f"{args.db} not found - consistency needs the terms from a translate --vote-terms run")
-        print(evaluation.run_consistency(args.source, args.translation, Store(args.db)))
+        print(evaluation.run_consistency(args.source, args.translation, Store(args.db), args.pages))
     return 0
 
 
@@ -238,7 +241,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--weight", action="append", metavar="PROVIDER=NUMBER",
                    help="vote weight, e.g. --weight claude=1.5 (default 1 each)")
     p.add_argument("--db", default="translator.db", help="memory database file")
-    p.add_argument("--no-memory", action="store_true", help="don't read or write the memory database")
+    p.add_argument("--no-memory", action="store_true", help="don't reuse or save translations (the glossary is still used)")
+    p.add_argument("--no-glossary", action="store_true", help="don't give the models the agreed terms (for experiments)")
     p.set_defaults(func=cmd_translate)
 
     p = sub.add_parser("estimate", help="size and rough cost before translating")
@@ -266,6 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--judge", metavar="PROVIDER", help="AI judge, e.g. claude - best a different model than the translator")
     e.add_argument("--model", action="append", metavar="PROVIDER=MODEL")
     e.add_argument("--sample", type=int, default=30, help="paragraphs for the AI judge (default 30)")
+    e.add_argument("--db", default="translator.db", help="memory database, for problems per model")
     e = ev.add_parser("post-edit", help="how much the human editor changed")
     e.add_argument("machine", help="the machine translation, unchanged")
     e.add_argument("edited", help="the same file after your corrections")
@@ -277,6 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
     e = ev.add_parser("consistency", help="how often the agreed terms were used, per model")
     e.add_argument("source")
     e.add_argument("translation")
+    e.add_argument("--pages", type=float, help="measure only the first N pages")
     e.add_argument("--db", default="translator.db")
     p.set_defaults(func=cmd_eval)
 
