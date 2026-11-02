@@ -1,0 +1,6 @@
+{
+  "permissions": {
+    "deny": ["Read(./.env)", "Read(./.env.*)", "Read(**/*.docx)", "Edit(**/*.docx)"],
+    "ask": ["mcp__kazakh-translator__translate", "mcp__kazakh-translator__check"]
+  }
+}

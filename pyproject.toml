@@ -19,11 +19,13 @@ gemini = ["google-genai>=1.50"]
 claude = ["anthropic>=0.40"]
 openai = ["openai>=1.60"]
 eval = ["sacrebleu>=2.4"]
-all = ["google-genai>=1.50", "anthropic>=0.40", "openai>=1.60", "sacrebleu>=2.4"]
+mcp = ["mcp>=2.0,<3"]
+all = ["google-genai>=1.50", "anthropic>=0.40", "openai>=1.60", "sacrebleu>=2.4", "mcp>=2.0,<3"]
 dev = ["pytest>=8"]
 
 [project.scripts]
 translator = "translator.cli:main"
+translator-mcp = "translator.mcp_server:main"
 
 [tool.setuptools]
 packages = ["translator"]

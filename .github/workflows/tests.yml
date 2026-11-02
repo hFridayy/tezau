@@ -20,6 +20,6 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - name: Install (no AI libraries or keys needed - the tests use fake models)
-        run: pip install -e ".[dev,eval]"
+        run: pip install -e ".[dev,eval,mcp]"
       - name: Run tests
         run: pytest -q
