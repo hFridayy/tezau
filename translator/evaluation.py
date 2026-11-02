@@ -18,7 +18,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from .docx_io import iter_paragraphs, needs_translation, normalize, open_document
-from .engine import detect_problems, looks_untranslated, parse_json_object
+from .engine import NOTES, detect_problems, looks_untranslated, parse_json_object
 from .glossary import KAZAKH_PLURAL, Glossary
 
 RESULTS_DIR = "results"
@@ -94,7 +94,7 @@ CHECKS = {
     "half_translated": "Russian sentence with only some words in Kazakh",
     "json_leak": "source and translation glued together ('…\": \"…')",
     "mixed_script": "a word mixes Latin and Cyrillic letters (e.g. a Latin 'e' inside a Kazakh word)",
-    "unchanged": "short line left exactly as in Russian - check it (fine if it is a loanword like «Модуль»)",
+    "unchanged": "note, not an error: short line the same as in Russian (usually a loanword like «Студент»)",
     "numbers_changed": "numbers differ from the source (fine if a number was written out in words)",
     "length_suspicious": "translation is under half or over double the source length",
 }
@@ -153,7 +153,7 @@ def run_check(source: str, translation: str, judge_provider=None, sample: int = 
             flags["numbers_changed"].append(i)
         if len(s) > 30 and not 0.5 <= len(t) / len(s) <= 2.0:
             flags["length_suspicious"].append(i)
-    flagged = sorted({i for v in flags.values() for i in v})
+    flagged = sorted({i for k, v in flags.items() if k not in NOTES for i in v})
     by_index = {i: (s, t) for i, s, t in pairs}
     passed = 100 * (len(pairs) - len(flagged)) / max(len(pairs), 1)
 
@@ -189,6 +189,10 @@ def run_check(source: str, translation: str, judge_provider=None, sample: int = 
                    f"- Errors by type: {j['errors_by_type']}", ""]
             md += [f"- #{pid} {e.get('severity')} {e.get('type')}: {e.get('span', '')}" for pid, e in j["serious"]]
 
+    if flags["unchanged"]:  # each distinct line once, most frequent first
+        same = Counter(by_index[i][1] for i in flags["unchanged"])
+        md += ["", f"## Same as in Russian ({len(same)} distinct lines) - confirm once, usually loanwords", ""]
+        md += [f"- {text} ×{n}" for text, n in same.most_common()]
     md += ["", "## Flagged paragraphs (first 40) - start your review here", ""]
     for i in flagged[:40]:
         s, t = by_index[i]

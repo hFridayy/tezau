@@ -88,7 +88,9 @@ def detect_problems(source: str, translation: str) -> list:
     run = longest_copied = 0
     russian_in_run = False
     for w in words:
-        copied = (len(w) >= 3 and w in source_words and not KAZAKH_ONLY.intersection(w)
+        if len(w) < 3:  # short words ('о', 'в', 'с') neither count nor break the stretch
+            continue
+        copied = (w in source_words and not KAZAKH_ONLY.intersection(w)
                   and re.search(r"[а-яё]", w) is not None)
         run = run + 1 if copied else 0
         russian_in_run = (russian_in_run and copied) or (copied and w.endswith(RUSSIAN_ENDINGS))
@@ -104,6 +106,14 @@ def detect_problems(source: str, translation: str) -> list:
         elif copied and (function_words >= 1 or any(len(w) >= 5 and w.endswith(RUSSIAN_ENDINGS) for w in copied)):
             reasons.append("half_translated")
     return reasons
+
+
+NOTES = {"unchanged"}  # worth a look, but not an error: usually a correct loanword
+
+
+def is_bad(source: str, translation: str) -> bool:
+    """True if the translation has a real problem (notes like 'unchanged' do not count)."""
+    return any(r not in NOTES for r in detect_problems(source, translation))
 
 
 def repair(source: str, translation: str) -> str:
@@ -336,7 +346,7 @@ def translate_document(input_path: str, output_path: str, providers, *,
 
     # 2. reuse the translation memory, split the rest into pages
     cached = store.tm_get_many(unique) if store else {}
-    cached = {s: t for s, t in cached.items() if not detect_problems(s, t)}  # don't reuse bad answers
+    cached = {s: t for s, t in cached.items() if not is_bad(s, t)}  # don't reuse bad answers
     todo = [text for text in unique if text not in cached]
     pages = make_pages(todo, page_chars)
     if max_pages:
