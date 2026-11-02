@@ -193,6 +193,10 @@ def run_check(source: str, translation: str, judge_provider=None, sample: int = 
         same = Counter(by_index[i][1] for i in flags["unchanged"])
         md += ["", f"## Same as in Russian ({len(same)} distinct lines) - confirm once, usually loanwords", ""]
         md += [f"- {text} ×{n}" for text, n in same.most_common()]
+    if flags["unchanged"]:  # each distinct line once, most frequent first
+        same = Counter(by_index[i][1] for i in flags["unchanged"])
+        md += ["", f"## Same as in Russian ({len(same)} distinct lines) - confirm once, usually loanwords", ""]
+        md += [f"- {text} ×{n}" for text, n in same.most_common()]
     md += ["", "## Flagged paragraphs (first 40) - start your review here", ""]
     for i in flagged[:40]:
         s, t = by_index[i]

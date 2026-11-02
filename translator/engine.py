@@ -116,6 +116,14 @@ def is_bad(source: str, translation: str) -> bool:
     return any(r not in NOTES for r in detect_problems(source, translation))
 
 
+NOTES = {"unchanged"}  # worth a look, but not an error: usually a correct loanword
+
+
+def is_bad(source: str, translation: str) -> bool:
+    """True if the translation has a real problem (notes like 'unchanged' do not count)."""
+    return any(r not in NOTES for r in detect_problems(source, translation))
+
+
 def repair(source: str, translation: str) -> str:
     """Fix what can be fixed without asking the model again: an answer written as
     'source": "translation', and Latin look-alike letters inside Cyrillic words."""
