@@ -60,7 +60,7 @@ LETTER_WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*")
 # a word mixing Cyrillic with Latin letters (including accented ones like ą, é)
 MIXED_SCRIPT_WORD = re.compile(r"\b(?=\w*[А-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі])(?=\w*[A-Za-z\u00C0-\u024F])\w+\b")
 JSON_LEAK = re.compile(r'"\s*:\s*"')
-# Russian grammatical endings that Kazakh words (and shared loanwords like "манекен") do not have
+# Russian grammatical endings that Kazakh words (and shared loanwords like "принтер") do not have
 RUSSIAN_ENDINGS = ("ого", "его", "ому", "ему", "ыми", "ими", "ых", "их", "ется", "ются", "ается", "яется",
                    "ует", "ание", "ения", "ение", "ости", "ость", "ией", "ями", "ами", "ую", "ая", "яя",
                    "ое", "ые", "ий", "ый", "ой")

@@ -14,3 +14,8 @@ data/
 venv/
 *.db
 *.egg-info/
+
+# one-off update scripts
+update_step*.py
+install_step*.sh
+replace_test_sentences.sh
