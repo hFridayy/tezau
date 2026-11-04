@@ -134,7 +134,6 @@ def repair(source: str, translation: str) -> str:
     return fix_lookalikes(text)
 
 
-# ---------------------------------------------------------------- chunking
 
 @dataclass
 class Piece:
@@ -179,8 +178,6 @@ def make_pages(paragraphs: list, page_chars: int) -> list:
         pages.append(page)
     return pages
 
-
-# ---------------------------------------------------------------- talking to the model
 
 def parse_json_object(text: str) -> dict:
     """Models sometimes wrap JSON in ```json fences or add a sentence - take the {...} part."""
@@ -249,7 +246,6 @@ class PageTranslator:
         return self.translate(texts[:half], _depth) + self.translate(texts[half:], _depth)
 
 
-# ---------------------------------------------------------------- checkpointing
 
 class Checkpoint:
     """Progress file in JSON Lines format: a header line, then one line per finished page.
@@ -306,7 +302,6 @@ def fingerprint(pages: list, source: str, target: str) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
-# ---------------------------------------------------------------- the whole pipeline
 
 @dataclass
 class Result:
