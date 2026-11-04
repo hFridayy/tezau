@@ -55,7 +55,6 @@ class Store:
     def _key(self, text: str) -> str:
         return hashlib.sha256(f"{self.lang}\n{normalize(text)}".encode("utf-8")).hexdigest()
 
-    # ---------------------------------------------------- translation memory
 
     def tm_get_many(self, texts: list) -> dict:
         """{source text: translation} for the texts already in memory."""
@@ -90,7 +89,6 @@ class Store:
                        human = excluded.human, updated = excluded.updated
                    WHERE tm.human = 0 OR excluded.human = 1""", rows)
 
-    # ---------------------------------------------------- termbase
 
     def terms(self) -> dict:
         """{source term: (target, status)}"""
