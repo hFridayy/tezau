@@ -91,8 +91,6 @@ def _contains(longer: tuple, shorter: tuple) -> bool:
     return any(longer[i:i + n] == shorter for i in range(len(longer) - n + 1))
 
 
-# ------------------------------------------------------------------ voting
-
 TERMS_PROMPT = """You are a terminologist preparing a glossary for translating a {source} document into {target}.
 For each {source} term you receive, give the standard {target} equivalent used in formal and official documents,
 in its dictionary (base) form.
@@ -176,8 +174,6 @@ def vote_terms(terms: list, providers: list, *, weights: dict = None, store=None
             store.term_put(term, original[winner], votes, round(agreement, 2), status)
     return decisions
 
-
-# ------------------------------------------------------------------ using the glossary
 
 class Glossary:
     """Agreed terms; for_text() returns only the terms that appear in a given text,
