@@ -27,7 +27,6 @@ NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 MIXED_SCRIPT = re.compile(r"\b(?=\w*[А-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі])(?=\w*[A-Za-z])\w+\b")
 
 
-# ------------------------------------------------------------------ shared helpers
 
 def doc_paragraphs(path: str) -> list:
     """All paragraphs (body, tables, headers, footers) as normalized text, in document order."""
@@ -61,8 +60,6 @@ def short(text: str, n: int = 160) -> str:
     return text if len(text) <= n else text[:n] + "…"
 
 
-# ------------------------------------------------------------------ metrics
-
 def chrf(hyps: list, refs: list) -> float:
     """chrF++: character n-gram F-score (0-100). Works well for languages with many word endings."""
     import sacrebleu
@@ -85,8 +82,6 @@ def bootstrap_ci(hyps: list, refs: list, metric, rounds: int = 1000, seed: int =
     scores.sort()
     return round(scores[int(0.025 * rounds)], 2), round(scores[int(0.975 * rounds)], 2)
 
-
-# ------------------------------------------------------------------ check
 
 CHECKS = {
     "empty": "translation is missing",
@@ -210,8 +205,6 @@ def run_check(source: str, translation: str, judge_provider=None, sample: int = 
     ) + f"\n\nFull report: {path}"
 
 
-# ------------------------------------------------------------------ post-edit
-
 def first_pages_cutoff(paragraphs: list, pages: float, page_chars: int = 2500) -> int:
     """Index of the first paragraph after the first `pages` pages (counted in characters)."""
     total = 0
@@ -269,8 +262,6 @@ def run_post_edit(machine: str, edited: str, pages: float = None, minutes: float
     path = save_report("post_edit", report, md)
     return "\n".join(md[:7 + (1 if minutes else 0)]) + f"\n\nFull report: {path}"
 
-
-# ------------------------------------------------------------------ consistency
 
 def _kazakh_roots(term: str) -> list:
     """Roots of a Kazakh term, robust to endings and related forms: drop the plural, then the
