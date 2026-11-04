@@ -19,3 +19,5 @@ venv/
 update_step*.py
 install_step*.sh
 replace_test_sentences.sh
+rename_to_*.py
+install_readme.sh
