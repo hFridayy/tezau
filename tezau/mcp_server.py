@@ -7,12 +7,12 @@
   "заявка should always be өтінім - remember that"            -> term_set
   "Translate this sentence: ..."                              -> translate_text
 
-The same engine, memory and glossary as the `translator` command. Keys, the database and
-prices.json live in one folder, TRANSLATOR_HOME (default ~/.kazakh-translator), because an MCP
-client starts the server from a folder of its own choosing. Set TRANSLATOR_HOME to your project
+The same engine, memory and glossary as the `tezau` command. Keys, the database and
+prices.json live in one folder, TEZAU_HOME (default ~/.tezau), because an MCP
+client starts the server from a folder of its own choosing. Set TEZAU_HOME to your project
 folder to share memory and terms with the command line.
 
-Run with:  translator-mcp   (the client starts it; it talks MCP over stdin/stdout)
+Run with:  tezau-mcp   (the client starts it; it talks MCP over stdin/stdout)
 """
 import functools
 import os
@@ -40,7 +40,7 @@ SOURCE, TARGET = "Russian", "Kazakh (Cyrillic script)"
 DEFAULT_PROVIDER = "gemini"  # fewest problems and best term consistency in our measurements, free tier
 
 server = MCPServer(
-    "kazakh-translator",
+    "tezau",
     instructions=(
         "Translates Russian Word documents (.docx) into Kazakh page by page, keeping the formatting, "
         "with a local translation memory and an agreed glossary. Suggested flow: estimate -> translate -> "
@@ -66,20 +66,25 @@ def tool(fn):
 
 # ------------------------------------------------------------------ settings
 
+def setting(name: str, default: str = None) -> str:
+    """TEZAU_<name> from the environment or .env; the old TRANSLATOR_<name> still works."""
+    return os.environ.get(f"TEZAU_{name}") or os.environ.get(f"TRANSLATOR_{name}") or default
+
+
 def home() -> Path:
-    path = Path(os.environ.get("TRANSLATOR_HOME", "~/.kazakh-translator")).expanduser()
+    path = Path(setting("HOME", "~/.tezau")).expanduser()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def setup() -> None:
-    """Load keys from TRANSLATOR_HOME/.env and write reports there."""
+    """Load keys from TEZAU_HOME/.env and write reports there."""
     load_dotenv(home() / ".env")
     evaluation.RESULTS_DIR = str(home() / "results")
 
 
 def db_path() -> str:
-    return os.environ.get("TRANSLATOR_DB") or str(home() / "translator.db")
+    return setting("DB") or str(home() / "tezau.db")
 
 
 def resolve(path: str, must_exist: bool = True) -> str:
@@ -98,8 +103,8 @@ def resolve(path: str, must_exist: bool = True) -> str:
 
 
 def models_from_env() -> dict:
-    """Optional TRANSLATOR_MODELS="claude=claude-haiku-5-5,openai=gpt-5-mini" in the .env file."""
-    pairs = (item.partition("=") for item in os.environ.get("TRANSLATOR_MODELS", "").split(","))
+    """Optional TEZAU_MODELS="claude=claude-haiku-5-5,openai=gpt-5-mini" in the .env file."""
+    pairs = (item.partition("=") for item in setting("MODELS", "").split(","))
     return {k.strip(): v.strip() for k, _, v in pairs if k.strip() and v.strip()}
 
 
@@ -108,9 +113,9 @@ def available_providers() -> list:
 
 
 def choose_providers(requested: str = None) -> list:
-    """None -> TRANSLATOR_PROVIDERS from .env, else Gemini (or the first provider with a key).
+    """None -> TEZAU_PROVIDERS from .env, else Gemini (or the first provider with a key).
     "all" -> every provider that has a key. "gemini,openai" -> exactly those. "fake" -> free dry run."""
-    names = (requested or os.environ.get("TRANSLATOR_PROVIDERS") or "auto").strip().lower()
+    names = (requested or setting("PROVIDERS") or "auto").strip().lower()
     have = available_providers()
     if names == "fake":
         from .fake import FakeProvider

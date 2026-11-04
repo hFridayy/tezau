@@ -8,14 +8,14 @@ import pytest
 pytest.importorskip("mcp")
 from mcp import Client  # noqa: E402
 
-from translator import mcp_server as ms  # noqa: E402
-from translator.docx_io import iter_paragraphs, open_document  # noqa: E402
+from tezau import mcp_server as ms  # noqa: E402
+from tezau.docx_io import iter_paragraphs, open_document  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def translator_home(tmp_path, monkeypatch):
-    monkeypatch.setenv("TRANSLATOR_HOME", str(tmp_path / "home"))
-    monkeypatch.delenv("TRANSLATOR_PROVIDERS", raising=False)
+    monkeypatch.setenv("TEZAU_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("TEZAU_PROVIDERS", raising=False)
     ms.setup()
     ms.JOBS.clear()
 

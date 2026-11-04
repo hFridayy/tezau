@@ -1,8 +1,8 @@
-"""The `translator` command, run the way a user runs it (with the fake provider)."""
+"""The `tezau` command, run the way a user runs it (with the fake provider)."""
 import json
 
-from translator.cli import main
-from translator.docx_io import iter_paragraphs, open_document
+from tezau.cli import main
+from tezau.docx_io import iter_paragraphs, open_document
 
 
 def test_dry_run_translate_and_check(make_docx, tmp_path, monkeypatch, capsys):
@@ -12,7 +12,7 @@ def test_dry_run_translate_and_check(make_docx, tmp_path, monkeypatch, capsys):
 
     assert main(["translate", src, out, "--providers", "fake"]) == 0
     assert [p.text for p in iter_paragraphs(open_document(out))][0] == "[қаз] Договор поставки товара."
-    assert not (tmp_path / "translator.db").exists()  # dry runs never touch the memory
+    assert not (tmp_path / "tezau.db").exists()  # dry runs never touch the memory
 
     assert main(["eval", "check", src, out]) == 0
     report = json.loads(next((tmp_path / "results").glob("check_*.json")).read_text(encoding="utf-8"))

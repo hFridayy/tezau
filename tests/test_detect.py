@@ -6,7 +6,7 @@ case never silently breaks another.
 """
 import pytest
 
-from translator.engine import detect_problems, is_bad, looks_untranslated, repair
+from tezau.engine import detect_problems, is_bad, looks_untranslated, repair
 
 # (Russian source, model output, expected problems)
 REAL_CASES = [

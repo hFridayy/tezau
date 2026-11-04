@@ -1,8 +1,8 @@
 """Error handling, rate limiting and the local database."""
 import pytest
 
-from translator.memory import Store
-from translator.providers import AuthError, ProviderError, RateLimiter, classify_error
+from tezau.memory import Store
+from tezau.providers import AuthError, ProviderError, RateLimiter, classify_error
 
 
 class HTTPError(Exception):
@@ -61,7 +61,7 @@ def test_auth_and_fatal_errors_stop_at_once(make_provider):
 
 
 def test_missing_key_is_an_auth_error():
-    from translator.providers import get_provider
+    from tezau.providers import get_provider
     with pytest.raises(AuthError):
         get_provider("gemini")
 

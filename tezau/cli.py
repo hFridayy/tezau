@@ -1,12 +1,12 @@
-"""The `translator` command.
+"""The `tezau` command.
 
-  translator translate rusfile.docx kazfile.docx --providers gemini,claude,openai --vote-terms
-  translator estimate rusfile.docx
-  translator terms list
-  translator terms set "договор" "шарт"
-  translator check-keys
+  tezau translate rusfile.docx kazfile.docx --providers gemini,claude,openai --vote-terms
+  tezau estimate rusfile.docx
+  tezau terms list
+  tezau terms set "договор" "шарт"
+  tezau check-keys
 
-Run `translator <command> --help` for all options.
+Run `tezau <command> --help` for all options.
 """
 import argparse
 import json
@@ -22,7 +22,7 @@ from .glossary import Glossary, extract_terms, vote_terms
 from .memory import Store
 from .providers import PROVIDERS, AuthError, ProviderError, get_provider
 
-log = logging.getLogger("translator")
+log = logging.getLogger("tezau")
 
 
 # ------------------------------------------------------------------ helpers
@@ -214,7 +214,7 @@ def cmd_check_keys(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     all_names = ",".join(PROVIDERS)
-    ap = argparse.ArgumentParser(prog="translator",
+    ap = argparse.ArgumentParser(prog="tezau",
                                  description="Translate Word documents from Russian to Kazakh with LLMs.")
     ap.add_argument("-v", "--verbose", action="store_true", help="show detailed logs")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -240,7 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-count", type=int, default=3, help="how often a term must appear (default 3)")
     p.add_argument("--weight", action="append", metavar="PROVIDER=NUMBER",
                    help="vote weight, e.g. --weight claude=1.5 (default 1 each)")
-    p.add_argument("--db", default="translator.db", help="memory database file")
+    p.add_argument("--db", default="tezau.db", help="memory database file")
     p.add_argument("--no-memory", action="store_true", help="don't reuse or save translations (the glossary is still used)")
     p.add_argument("--no-glossary", action="store_true", help="don't give the models the agreed terms (for experiments)")
     p.set_defaults(func=cmd_translate)
@@ -248,18 +248,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("estimate", help="size and rough cost before translating")
     p.add_argument("input")
     p.add_argument("--page-chars", type=int, default=2500)
-    p.add_argument("--db", default="translator.db")
+    p.add_argument("--db", default="tezau.db")
     p.set_defaults(func=cmd_estimate)
 
     p = sub.add_parser("terms", help="show or correct the shared glossary")
     terms = p.add_subparsers(dest="action", required=True)
     t = terms.add_parser("list", help="show terms")
     t.add_argument("--status", choices=["agreed", "single", "disputed", "human"])
-    t.add_argument("--db", default="translator.db")
+    t.add_argument("--db", default="tezau.db")
     t = terms.add_parser("set", help="set a term yourself (models will never change it)")
     t.add_argument("source")
     t.add_argument("target")
-    t.add_argument("--db", default="translator.db")
+    t.add_argument("--db", default="tezau.db")
     p.set_defaults(func=cmd_terms)
 
     p = sub.add_parser("eval", help="measure translation quality")
@@ -270,7 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--judge", metavar="PROVIDER", help="AI judge, e.g. claude - best a different model than the translator")
     e.add_argument("--model", action="append", metavar="PROVIDER=MODEL")
     e.add_argument("--sample", type=int, default=30, help="paragraphs for the AI judge (default 30)")
-    e.add_argument("--db", default="translator.db", help="memory database, for problems per model")
+    e.add_argument("--db", default="tezau.db", help="memory database, for problems per model")
     e = ev.add_parser("post-edit", help="how much the human editor changed")
     e.add_argument("machine", help="the machine translation, unchanged")
     e.add_argument("edited", help="the same file after your corrections")
@@ -278,12 +278,12 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--minutes", type=float, help="how long the editing took, for minutes per page")
     e.add_argument("--source", help="the original Russian .docx (needed for --save-to-memory)")
     e.add_argument("--save-to-memory", action="store_true", help="save your edits to memory as human translations")
-    e.add_argument("--db", default="translator.db")
+    e.add_argument("--db", default="tezau.db")
     e = ev.add_parser("consistency", help="how often the agreed terms were used, per model")
     e.add_argument("source")
     e.add_argument("translation")
     e.add_argument("--pages", type=float, help="measure only the first N pages")
-    e.add_argument("--db", default="translator.db")
+    e.add_argument("--db", default="tezau.db")
     p.set_defaults(func=cmd_eval)
 
     p = sub.add_parser("check-keys", help="one tiny test request per provider")

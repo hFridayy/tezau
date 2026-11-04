@@ -5,8 +5,8 @@ import threading
 import pytest
 from docx import Document
 
-import translator.providers as providers_module
-from translator.providers import Provider
+import tezau.providers as providers_module
+from tezau.providers import Provider
 
 
 @pytest.fixture(autouse=True)

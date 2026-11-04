@@ -45,7 +45,7 @@ def _now() -> str:
 
 
 class Store:
-    def __init__(self, path: str = "translator.db", lang: str = "kk"):
+    def __init__(self, path: str = "tezau.db", lang: str = "kk"):
         self.path, self.lang = path, lang
         self._conn = sqlite3.connect(path, check_same_thread=False)  # we guard it with a lock
         self._lock = threading.Lock()

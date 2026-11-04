@@ -15,14 +15,14 @@ def check(name, ok, hint=""):
 print("1. Files and updates")
 files = ["__init__", "docx_io", "providers", "engine", "memory", "glossary"]
 for f in files:
-    check(f"translator/{f}.py exists", os.path.exists(f"translator/{f}.py"), "create it (see the step where it was added)")
-src = {f: open(f"translator/{f}.py", encoding="utf-8").read() for f in files if os.path.exists(f"translator/{f}.py")}
+    check(f"tezau/{f}.py exists", os.path.exists(f"tezau/{f}.py"), "create it (see the step where it was added)")
+src = {f: open(f"tezau/{f}.py", encoding="utf-8").read() for f in files if os.path.exists(f"tezau/{f}.py")}
 check("step 2.4b: work queue + failover", "def make_blocks" in src.get("engine", ""), "run update_step24b.py")
 check("step 2.4b: fatal errors stop at once", '"fatal"' in src.get("providers", ""), "run update_step24b.py")
 check("step 2.4c: memory + glossary in engine", "store=None, glossary=None" in src.get("engine", ""), "run update_step24c.py")
 check("step 2.4d: reasoning tokens", "reasoning_tokens" in src.get("providers", ""), "run update_step24d.py")
 try:
-    import translator.docx_io, translator.providers, translator.engine, translator.memory, translator.glossary
+    import tezau.docx_io, tezau.providers, tezau.engine, tezau.memory, tezau.glossary
     check("all modules import", True)
 except Exception as e:
     check("all modules import", False, f"{type(e).__name__}: {e}")
@@ -30,10 +30,10 @@ except Exception as e:
 
 print("2. Offline pipeline test (fake AI)")
 from docx import Document
-import translator.providers as pr
-from translator.engine import translate_document
-from translator.memory import Store
-from translator.glossary import extract_terms, vote_terms, Glossary
+import tezau.providers as pr
+from tezau.engine import translate_document
+from tezau.memory import Store
+from tezau.glossary import extract_terms, vote_terms, Glossary
 
 pr.backoff_seconds = lambda *a, **k: 0
 

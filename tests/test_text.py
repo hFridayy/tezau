@@ -1,8 +1,8 @@
 """Chunking, JSON parsing, terms and the glossary: the pure-Python parts."""
 import pytest
 
-from translator.engine import make_pages, parse_json_object, split_long
-from translator.glossary import Glossary, _norm, extract_terms, fix_lookalikes, stem
+from tezau.engine import make_pages, parse_json_object, split_long
+from tezau.glossary import Glossary, _norm, extract_terms, fix_lookalikes, stem
 
 
 # ------------------------------------------------------------------ chunking

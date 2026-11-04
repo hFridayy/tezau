@@ -3,11 +3,11 @@ failover -> reassembly in order -> memory -> glossary. Runs in about a second, c
 import pytest
 from docx import Document
 
-from translator.docx_io import iter_paragraphs, open_document
-from translator.engine import translate_document
-from translator.glossary import Glossary, extract_terms, vote_terms
-from translator.memory import Store
-from translator.providers import ProviderError
+from tezau.docx_io import iter_paragraphs, open_document
+from tezau.engine import translate_document
+from tezau.glossary import Glossary, extract_terms, vote_terms
+from tezau.memory import Store
+from tezau.providers import ProviderError
 
 PARAGRAPHS = [f"Пункт {i}. Поставщик передает товар покупателю по договору поставки." for i in range(60)]
 
