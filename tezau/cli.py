@@ -25,7 +25,6 @@ from .providers import PROVIDERS, AuthError, ProviderError, get_provider
 log = logging.getLogger("tezau")
 
 
-# ------------------------------------------------------------------ helpers
 
 def parse_pairs(items: list, what: str) -> dict:
     """['claude=claude-haiku-5-5', 'openai=gpt-5-mini'] -> {'claude': ..., 'openai': ...}"""
@@ -72,7 +71,6 @@ def cost(usage, price) -> float:
     return (usage.input_tokens * price[0] + usage.output_tokens * price[1]) / 1e6
 
 
-# ------------------------------------------------------------------ commands
 
 def cmd_translate(args) -> int:
     if not os.path.exists(args.input):
@@ -210,7 +208,6 @@ def cmd_check_keys(args) -> int:
     return 1 if failures else 0
 
 
-# ------------------------------------------------------------------ argument parsing
 
 def build_parser() -> argparse.ArgumentParser:
     all_names = ",".join(PROVIDERS)
