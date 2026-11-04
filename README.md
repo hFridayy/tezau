@@ -49,16 +49,16 @@ built to make that review short, not to replace it.
 
 ```mermaid
 flowchart LR
-    A[Russian .docx] --> B[Split into pages]
-    B --> C{Translation memory}
-    C -- already translated --> G
-    C -- new text --> D[Models vote on key terms]
-    D --> E[Work queue: Gemini / Claude / OpenAI in parallel]
-    E --> F{Checks: untranslated? broken? mixed alphabets?}
-    F -- bad paragraphs --> E
-    F -- good --> G[Reassemble in order]
-    G --> H[Kazakh .docx, same layout]
-    G --> I[(Memory + glossary, SQLite)]
+    A["Russian .docx"] --> B["Split into pages"]
+    B --> C{"In translation memory?"}
+    C -->|"yes"| G["Reassemble in order"]
+    C -->|"new text"| D["Models vote on key terms"]
+    D --> E["Work queue: Gemini, Claude, OpenAI in parallel"]
+    E --> F{"Checks pass?"}
+    F -->|"bad paragraphs"| E
+    F -->|"good"| G
+    G --> H["Kazakh .docx, same layout"]
+    G --> I[("Memory and glossary (SQLite)")]
 ```
 
 The translation itself is a deterministic workflow, because it's cheaper and more predictable; the agentic loop
