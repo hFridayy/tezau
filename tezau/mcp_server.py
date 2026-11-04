@@ -64,8 +64,6 @@ def tool(fn):
     return server.tool()(wrapper)
 
 
-# ------------------------------------------------------------------ settings
-
 def setting(name: str, default: str = None) -> str:
     """TEZAU_<name> from the environment or .env; the old TRANSLATOR_<name> still works."""
     return os.environ.get(f"TEZAU_{name}") or os.environ.get(f"TRANSLATOR_{name}") or default
@@ -168,8 +166,6 @@ def usage_and_cost(providers: list, pages_by_provider: dict = None) -> dict:
     return {"by_model": report, "total_usd": round(total, 4) if total else None}
 
 
-# ------------------------------------------------------------------ background jobs
-
 @dataclass
 class Job:
     id: str
@@ -224,8 +220,6 @@ def run_job(job: Job, vote: bool, notes: str) -> None:
         if store:
             store.close()
 
-
-# ------------------------------------------------------------------ tools
 
 @tool
 def estimate(input_path: str) -> dict:
